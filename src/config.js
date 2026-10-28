@@ -5,9 +5,14 @@
  * (.actor/pay_per_event.json). Prices live on Apify, not here.
  */
 export const EVENTS = {
-    listing: 'business-listing', // one business row saved
-    websiteContacts: 'website-contacts', // enrichFromWebsite is on and the business's own site listed an email, phone or WhatsApp
+    listing: 'business-listing', // one business row saved; contacts from its website (when on) are included
 };
+
+/** Overture's confidence that a place exists (0-1). Below this, places are left out as likely closed or duplicates. */
+export const MIN_CONFIDENCE = 0.5;
+
+/** A place wider or taller than this is refused: it would read most of a country's data. Big metros fit. */
+export const MAX_AREA_KM = 150;
 
 export const HTTP = {
     timeoutMs: 15_000,

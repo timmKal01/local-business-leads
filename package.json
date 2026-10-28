@@ -2,13 +2,15 @@
     "name": "local-business-leads",
     "version": "0.1.0",
     "type": "module",
-    "description": "Local business leads from OpenStreetMap: name, address, phone, website and opening hours for any type of business in any city, plus optional contacts from each business's own website.",
+    "description": "Local business leads from Overture Maps open data: name, address, phone, website, email and socials for any type of business in any city, plus optional contacts from each business's own website.",
     "engines": {
         "node": ">=20.0.0"
     },
     "dependencies": {
         "apify": "^3.2.6",
         "cheerio": "^1.2.0",
+        "hyparquet": "^1.31.5",
+        "hyparquet-compressors": "^1.1.2",
         "libphonenumber-js": "^1.13.14",
         "tldts": "^7.4.16"
     },

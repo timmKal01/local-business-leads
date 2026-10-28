@@ -15,7 +15,7 @@
                     "city",
                     "countryCode",
                     "whatsapp",
-                    "openingHours"
+                    "confidence"
                 ]
             },
             "display": {
@@ -57,9 +57,9 @@
                         "label": "WhatsApp",
                         "format": "text"
                     },
-                    "openingHours": {
-                        "label": "Opening hours",
-                        "format": "text"
+                    "confidence": {
+                        "label": "Confidence",
+                        "format": "number"
                     }
                 }
             }
@@ -70,11 +70,12 @@
                 "fields": [
                     "rowType",
                     "name",
-                    "phoneSource",
                     "emailSource",
                     "websiteStatus",
                     "websiteNote",
-                    "osmUrl",
+                    "operatingStatus",
+                    "overtureId",
+                    "attribution",
                     "note",
                     "error"
                 ]
@@ -90,10 +91,6 @@
                         "label": "Business",
                         "format": "text"
                     },
-                    "phoneSource": {
-                        "label": "Phone from",
-                        "format": "text"
-                    },
                     "emailSource": {
                         "label": "Email from",
                         "format": "text"
@@ -106,9 +103,17 @@
                         "label": "Website note",
                         "format": "text"
                     },
-                    "osmUrl": {
-                        "label": "OpenStreetMap",
-                        "format": "link"
+                    "operatingStatus": {
+                        "label": "Status",
+                        "format": "text"
+                    },
+                    "overtureId": {
+                        "label": "Overture ID",
+                        "format": "text"
+                    },
+                    "attribution": {
+                        "label": "Source",
+                        "format": "text"
                     },
                     "note": {
                         "label": "Note",

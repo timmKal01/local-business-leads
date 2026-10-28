@@ -1,12 +1,7 @@
 {
     "business-listing": {
         "eventTitle": "Business lead",
-        "eventDescription": "One business saved, with its name, address, phone, website and opening hours from OpenStreetMap. Notes, errors and businesses left out by your filters are free.",
-        "eventPriceUsd": 0.002
-    },
-    "website-contacts": {
-        "eventTitle": "Contacts from website",
-        "eventDescription": "A business email, phone number or WhatsApp link found on the business's own website. Only when website contacts are on and something was found.",
-        "eventPriceUsd": 0.003
+        "eventDescription": "One business saved, with its name, address, phone, website, email and social profiles, plus contacts from its own website when that option is on. Notes, errors and businesses left out by your filters are free.",
+        "eventPriceUsd": 0.02
     }
 }

@@ -1,9 +1,12 @@
-// Local Business Leads: businesses of one type in one place from OpenStreetMap (name, address, phone, website, hours),
-// optionally enriched with the email, phones, WhatsApp and social profiles their own website publishes.
-// No Google, no proxies, no login. Every row has a rowType: "business", or "note"/"error" (never charged).
+// Local Business Leads: businesses of one type in one place from Overture Maps open data (name, address, phone,
+// website, email, socials), optionally enriched with the email, phones, WhatsApp and social profiles their own website
+// publishes. No Google, no proxies, no login. Every row has a rowType: "business", or "note"/"error" (never charged).
 import { Actor, log } from 'apify';
-import { EVENTS, ENRICH_CONCURRENCY, EXAMPLE_SEARCH } from './config.js';
-import { CATEGORIES, geocode, searchListings } from './osm.js';
+import { EVENTS, ENRICH_CONCURRENCY, EXAMPLE_SEARCH, MIN_CONFIDENCE, MAX_AREA_KM } from './config.js';
+import { CATEGORIES, categoryMatcher } from './categories.js';
+import { geocode, bboxSizeKm } from './geocode.js';
+import { latestPlacesRelease, findCandidates, readDetails } from './overture.js';
+import { placeToListing, isChain } from './place.js';
 import { enrichFromWebsite } from './enrich.js';
 import { emptyRunReason, noteRow, errorRow } from './note.js';
 
@@ -41,85 +44,106 @@ if (!CATEGORIES[category]) {
 }
 const categoryTitle = CATEGORIES[category].title;
 
-// 1. The place, then the listings. If OpenStreetMap's servers are down, say so in a row instead of failing.
+// 1. The place.
 let place;
-let result;
 try {
     place = await geocode(location);
-    if (!place) {
-        await stop(errorRow(`OpenStreetMap couldn't find a place called "${location}". Try adding the country, e.g. "Denver, USA".`, search), 'Place not found; nothing charged.');
-    }
-    search.place = place.display_name;
-    log.info(`Searching OpenStreetMap for ${categoryTitle.toLowerCase()} in ${place.display_name}`);
-    // Tags-only output is small, so asking for plenty (filters and chains drop some) costs little.
-    result = await searchListings({ category, place, fetchLimit: Math.min(10_000, Math.max(1_000, maxResults * 10)) });
 } catch (err) {
-    log.warning(err.message);
-    await stop(noteRow(`OpenStreetMap's servers didn't answer, so nothing was searched or charged: ${err.message}. They are free public servers that are sometimes at capacity; try again in a few minutes.`, search),
-        'OpenStreetMap was unavailable; nothing charged.');
+    await stop(noteRow(`${err.message}, so nothing was searched or charged. Try again in a few minutes.`, search), 'The place search was unavailable; nothing charged.');
+}
+if (!place) {
+    await stop(errorRow(`Couldn't find a place called "${location}". Try adding the country, e.g. "Denver, USA".`, search), 'Place not found; nothing charged.');
+}
+search.place = place.name;
+const { widthKm, heightKm } = bboxSizeKm(place.bbox);
+if (widthKm > MAX_AREA_KM || heightKm > MAX_AREA_KM) {
+    await stop(errorRow(`"${place.name}" covers about ${Math.round(widthKm)} x ${Math.round(heightKm)} km. Search a city, town or neighbourhood (up to ${MAX_AREA_KM} km across) instead.`, search),
+        'Area too large; nothing charged.');
 }
 
-const counts = { found: result.found, unnamed: result.unnamed, chains: 0, filteredOut: 0, considered: 0 };
-const candidates = result.listings.filter((l) => {
-    if (l.isChain && !includeChains) {
-        counts.chains++;
-        return false;
-    }
-    if (onlyWithWebsite && !l.website) {
-        counts.filteredOut++;
-        return false;
-    }
-    return true;
-});
-log.info(`OpenStreetMap: ${result.found}${result.capped ? '+' : ''} found, ${candidates.length} candidates after chains and filters`
-    + `${enrich ? '; reading their websites for contact details' : ''}`);
+// 2. Candidates: places of the chosen type in the area that are open, likely to exist and (unless asked) not chains.
+const counts = { inBox: 0, ofType: 0, closed: 0, lowConfidence: 0, chains: 0, filteredOut: 0 };
+const matches = categoryMatcher(category);
+let candidates;
+let release;
+try {
+    const latest = await latestPlacesRelease();
+    release = latest.release;
+    log.info(`Searching Overture Maps (release ${release}) for ${categoryTitle.toLowerCase()} in ${place.name}`);
+    const found = await findCandidates({
+        files: latest.files,
+        bbox: place.bbox,
+        keep: (p) => {
+            if (!matches(p)) return false;
+            counts.ofType++;
+            if (p.operating_status && p.operating_status !== 'open') {
+                counts.closed++;
+                return false;
+            }
+            if (typeof p.confidence === 'number' && p.confidence < MIN_CONFIDENCE) {
+                counts.lowConfidence++;
+                return false;
+            }
+            if (isChain(p) && !includeChains) {
+                counts.chains++;
+                return false;
+            }
+            return true;
+        },
+    });
+    counts.inBox = found.inBox;
+    // Most certain first, so a small maxResults gets the best-attested businesses from all over the area.
+    candidates = found.candidates.sort((a, b) => (b.light.confidence ?? 0) - (a.light.confidence ?? 0));
+} catch (err) {
+    log.warning(err.message);
+    await stop(noteRow(`Overture's data files couldn't be read, so nothing was searched or charged: ${err.message}. Try again in a few minutes.`, search),
+        'The data files were unavailable; nothing charged.');
+}
+log.info(`${candidates.length} candidates (${counts.ofType} ${categoryTitle.toLowerCase()}, ${counts.closed} closed, ${counts.lowConfidence} low confidence, ${counts.chains} chains left out)`);
 
-// 2. Rows, in OpenStreetMap's order. With enrichment on, websites are read a few at a time.
+// 3. Rows. Details are read in batches; with website contacts on, websites are read a few at a time.
 let saved = 0;
-let contactsCharged = 0;
 let stopped = false;
 const scrapedAt = new Date().toISOString();
+const attribution = (sources) => `Overture Maps Foundation (overturemaps.org)${sources.length ? `, data from ${sources.join(', ')}` : ''}. CDLA Permissive 2.0, Apache 2.0 (Foursquare) or CC0.`;
 
 async function toRow(listing) {
     const site = enrich ? await enrichFromWebsite(listing) : null;
-    const sitePhone = site?.phones[0] ?? null;
-    const row = {
+    const phones = [...new Set([...listing.phones, ...(site?.phones ?? [])])];
+    const sitePhone = site?.phones.find((p) => !listing.phones.includes(p)) ?? null;
+    return {
         rowType: 'business',
         name: listing.name,
         category: listing.category,
         phone: listing.phone ?? sitePhone,
-        phoneSource: listing.phone ? 'openstreetmap' : sitePhone ? 'website' : null,
+        phones,
         email: listing.email ?? site?.email ?? null,
-        emailSource: listing.email ? 'openstreetmap' : site?.email ? 'website' : null,
+        emailSource: listing.email ? 'listing' : site?.email ? 'website' : null,
         website: listing.website,
         address: listing.address,
         street: listing.street,
-        postcode: listing.postcode,
         city: listing.city,
+        region: listing.region,
+        postcode: listing.postcode,
         countryCode: listing.countryCode,
-        openingHours: listing.openingHours,
         whatsapp: site?.whatsapp ?? null,
         socialLinks: { ...(site?.socialLinks ?? {}), ...listing.socialLinks },
-        websitePhones: site?.phones ?? [],
         websiteStatus: site?.websiteStatus ?? 'not_checked',
         websiteNote: site?.websiteNote ?? null,
         latitude: listing.latitude,
         longitude: listing.longitude,
         isChain: listing.isChain,
         brand: listing.brand,
-        placeId: listing.placeId,
-        osmUrl: listing.osmUrl,
+        operatingStatus: listing.operatingStatus,
+        confidence: listing.confidence,
+        overtureId: listing.overtureId,
         search,
-        attribution: 'Business data © OpenStreetMap contributors (ODbL)',
+        attribution: attribution(listing.sources),
         scrapedAt,
     };
-    // The website contacts charge is only for something the listing didn't already have.
-    const newPhone = site?.phones.some((p) => p !== listing.phone);
-    const siteContacts = Boolean(site && ((site.email && site.email !== listing.email) || newPhone || site.whatsapp));
-    return { row, siteContacts };
 }
 
-async function save({ row, siteContacts }) {
+async function save(row) {
     if (stopped || saved >= maxResults) return;
     if (requireContact && !row.phone && !row.email && !row.whatsapp) {
         counts.filteredOut++;
@@ -127,40 +151,52 @@ async function save({ row, siteContacts }) {
     }
     saved++;
     const pushResult = await Actor.pushData(row, EVENTS.listing);
-    if (pushResult?.eventChargeLimitReached) stopped = true;
-    if (siteContacts && !stopped) {
-        contactsCharged++;
-        const chargeResult = await Actor.charge({ eventName: EVENTS.websiteContacts });
-        if (chargeResult?.eventChargeLimitReached) stopped = true;
+    if (pushResult?.eventChargeLimitReached) {
+        stopped = true;
+        log.warning('The run reached its maximum cost (set by the user); stopping.');
     }
-    if (stopped) log.warning('The run reached its maximum cost (set by the user); stopping.');
 }
 
-// A few workers take the next listing as soon as they're free, so one slow website doesn't hold up the others.
-// A worker stops once enough rows are saved or are being worked on (requireContact may need more listings than that).
-let next = 0;
-let inFlight = 0;
-async function worker() {
-    while (next < candidates.length && !stopped && saved + inFlight < maxResults) {
-        const listing = candidates[next++];
-        counts.considered++;
-        inFlight++;
-        try {
-            await save(await toRow(listing));
-        } finally {
-            inFlight--;
+const filtersOn = onlyWithWebsite || requireContact;
+let taken = 0;
+while (taken < candidates.length && saved < maxResults && !stopped) {
+    // Read details for as many as are still needed, more when filters will drop some.
+    const want = Math.max(10, (maxResults - saved) * (filtersOn ? 3 : 1));
+    const batch = candidates.slice(taken, taken + want);
+    taken += batch.length;
+    const listings = (await readDetails(batch))
+        .map((p) => placeToListing(p, { countryCode: place.countryCode }))
+        .filter((l) => {
+            if (!l.name || (onlyWithWebsite && !l.website)) {
+                counts.filteredOut++;
+                return false;
+            }
+            return true;
+        });
+
+    // A few workers take the next listing as soon as they're free, so one slow website doesn't hold up the others.
+    let next = 0;
+    let inFlight = 0;
+    const worker = async () => {
+        while (next < listings.length && !stopped && saved + inFlight < maxResults) {
+            const listing = listings[next++];
+            inFlight++;
+            try {
+                await save(await toRow(listing));
+            } finally {
+                inFlight--;
+            }
         }
-    }
+    };
+    await Promise.all(Array.from({ length: enrich ? ENRICH_CONCURRENCY : 1 }, worker));
 }
-await Promise.all(Array.from({ length: enrich ? ENRICH_CONCURRENCY : 1 }, worker));
 
 if (saved === 0) {
-    const note = emptyRunReason(counts, { categoryTitle, place: place.display_name, includeChains, onlyWithWebsite, requireContact });
-    await stop(noteRow(note, search, { found: result.found, chains: counts.chains, filteredOut: counts.filteredOut }), note);
+    const note = emptyRunReason(counts, { categoryTitle, place: place.name, includeChains, onlyWithWebsite, requireContact });
+    await stop(noteRow(note, search, { ...counts, release }), note);
 }
 
-const summary = `Saved ${saved} ${categoryTitle.toLowerCase()} in ${place.display_name}`
-    + `${enrich ? `, ${contactsCharged} with contact details from their website` : ''}.`;
+const summary = `Saved ${saved} ${categoryTitle.toLowerCase()} in ${place.name} (Overture Maps ${release}).`;
 log.info(summary);
 await Actor.setStatusMessage(summary);
 await Actor.exit();
