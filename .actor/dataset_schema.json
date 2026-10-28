@@ -1,0 +1,125 @@
+{
+    "actorSpecification": 1,
+    "fields": {},
+    "views": {
+        "leads": {
+            "title": "Leads",
+            "transformation": {
+                "fields": [
+                    "name",
+                    "category",
+                    "phone",
+                    "email",
+                    "website",
+                    "address",
+                    "city",
+                    "countryCode",
+                    "whatsapp",
+                    "openingHours"
+                ]
+            },
+            "display": {
+                "component": "table",
+                "properties": {
+                    "name": {
+                        "label": "Business",
+                        "format": "text"
+                    },
+                    "category": {
+                        "label": "Category",
+                        "format": "text"
+                    },
+                    "phone": {
+                        "label": "Phone",
+                        "format": "text"
+                    },
+                    "email": {
+                        "label": "Email",
+                        "format": "text"
+                    },
+                    "website": {
+                        "label": "Website",
+                        "format": "link"
+                    },
+                    "address": {
+                        "label": "Address",
+                        "format": "text"
+                    },
+                    "city": {
+                        "label": "City",
+                        "format": "text"
+                    },
+                    "countryCode": {
+                        "label": "Country",
+                        "format": "text"
+                    },
+                    "whatsapp": {
+                        "label": "WhatsApp",
+                        "format": "text"
+                    },
+                    "openingHours": {
+                        "label": "Opening hours",
+                        "format": "text"
+                    }
+                }
+            }
+        },
+        "sources": {
+            "title": "Sources and status",
+            "transformation": {
+                "fields": [
+                    "rowType",
+                    "name",
+                    "phoneSource",
+                    "emailSource",
+                    "websiteStatus",
+                    "websiteNote",
+                    "osmUrl",
+                    "note",
+                    "error"
+                ]
+            },
+            "display": {
+                "component": "table",
+                "properties": {
+                    "rowType": {
+                        "label": "Row type",
+                        "format": "text"
+                    },
+                    "name": {
+                        "label": "Business",
+                        "format": "text"
+                    },
+                    "phoneSource": {
+                        "label": "Phone from",
+                        "format": "text"
+                    },
+                    "emailSource": {
+                        "label": "Email from",
+                        "format": "text"
+                    },
+                    "websiteStatus": {
+                        "label": "Website read",
+                        "format": "text"
+                    },
+                    "websiteNote": {
+                        "label": "Website note",
+                        "format": "text"
+                    },
+                    "osmUrl": {
+                        "label": "OpenStreetMap",
+                        "format": "link"
+                    },
+                    "note": {
+                        "label": "Note",
+                        "format": "text"
+                    },
+                    "error": {
+                        "label": "Error",
+                        "format": "text"
+                    }
+                }
+            }
+        }
+    }
+}

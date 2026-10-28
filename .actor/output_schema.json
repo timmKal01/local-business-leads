@@ -1,0 +1,11 @@
+{
+    "actorOutputSchemaVersion": 1,
+    "title": "Output schema of Local Business Leads",
+    "properties": {
+        "results": {
+            "type": "string",
+            "title": "Business leads",
+            "template": "{{links.apiDefaultDatasetUrl}}/items"
+        }
+    }
+}

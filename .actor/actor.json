@@ -1,0 +1,19 @@
+{
+    "actorSpecification": 1,
+    "name": "local-business-leads",
+    "title": "Local Business Leads: Phones, Emails & Websites by City",
+    "description": "Local business leads for any city: pick a type of business and a place, get each one's name, address, phone, website and opening hours from OpenStreetMap, plus the email, phones, WhatsApp and socials its own website lists. No Google account, no proxy. Any country.",
+    "version": "0.1",
+    "meta": {
+        "templateId": "custom-no-proxy"
+    },
+    "input": "./input_schema.json",
+    "output": "./output_schema.json",
+    "dockerfile": "../Dockerfile",
+    "storages": {
+        "dataset": "./dataset_schema.json"
+    },
+    "defaultMemoryMbytes": 512,
+    "minMemoryMbytes": 256,
+    "maxMemoryMbytes": 1024
+}
