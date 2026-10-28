@@ -10,7 +10,8 @@ import { compressors } from 'hyparquet-compressors';
 
 const BUCKET = 'https://overturemaps-us-west-2.s3.amazonaws.com';
 const LIGHT_COLUMNS = ['bbox', 'basic_category', 'taxonomy', 'operating_status', 'confidence', 'brand'];
-const DETAIL_COLUMNS = ['id', 'names', 'basic_category', 'taxonomy', 'confidence', 'websites', 'socials', 'emails', 'phones', 'brand', 'addresses', 'operating_status', 'sources', 'bbox'];
+// Pass 2 only reads what pass 1 didn't: the two are merged per place.
+const DETAIL_COLUMNS = ['id', 'names', 'websites', 'socials', 'emails', 'phones', 'addresses', 'sources'];
 
 /** fetch with retries, reading the whole body inside each attempt so a connection dropped mid-download is retried too. */
 async function steadyFetch(url, init = {}) {
@@ -85,23 +86,11 @@ export async function findCandidates({ files, bbox, keep }) {
 }
 
 /**
- * Split sorted row numbers into runs whose neighbours are at most `maxGap` apart, so each run is one small read.
- * @param {number[]} sorted
- */
-export function rowRuns(sorted, maxGap = 64) {
-    const runs = [];
-    for (const row of sorted) {
-        const last = runs[runs.length - 1];
-        if (last && row - last.end <= maxGap) last.end = row;
-        else runs.push({ start: row, end: row });
-    }
-    return runs;
-}
-
-/**
- * Pass 2: full details for some candidates. Candidates are spread over the area, so each row group is read as a few
- * short runs around them, not as one range from the first to the last (that read whole row groups and ran out of
- * memory on Apify). Returns the places in the same order as `chosen`.
+ * Pass 2: details for some candidates, merged with what pass 1 read. Each row group is read once, from its first to its
+ * last chosen row: hyparquet fetches a group's column chunks in a couple of combined requests, so this costs a few
+ * requests per group. (Per-row page reads with useOffsetIndex took a few requests per column per run instead, and
+ * Chicago plumbers didn't finish in 5 minutes.) One group is decoded at a time and only the chosen rows are kept, and
+ * there is no byte cache (the cache is what got the first platform run killed). Returns places in `chosen` order.
  */
 export async function readDetails(chosen) {
     const byGroup = new Map();
@@ -112,14 +101,10 @@ export async function readDetails(chosen) {
     const details = new Map();
     for (const group of byGroup.values()) {
         const { file, metadata } = group[0];
-        const byRow = new Map(group.map((c) => [c.rowIndex, c]));
-        for (const { start, end } of rowRuns([...byRow.keys()].sort((a, b) => a - b))) {
-            const read = await parquetReadObjects({ file, metadata, compressors, columns: DETAIL_COLUMNS, rowStart: start, rowEnd: end + 1 });
-            read.forEach((place, i) => {
-                const c = byRow.get(start + i);
-                if (c) details.set(c, place);
-            });
-        }
+        const rows = group.map((c) => c.rowIndex).sort((a, b) => a - b);
+        const lo = rows[0];
+        const read = await parquetReadObjects({ file, metadata, compressors, columns: DETAIL_COLUMNS, rowStart: lo, rowEnd: rows[rows.length - 1] + 1 });
+        for (const c of group) details.set(c, { ...c.light, ...read[c.rowIndex - lo] });
     }
     return chosen.map((c) => details.get(c));
 }

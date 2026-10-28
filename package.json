@@ -15,7 +15,7 @@
         "tldts": "^7.4.16"
     },
     "scripts": {
-        "start": "node src/main.js",
+        "start": "node --max-old-space-size=1400 src/main.js",
         "test": "node --test"
     }
 }
