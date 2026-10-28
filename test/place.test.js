@@ -90,3 +90,9 @@ test('bbox size in km', () => {
     assert.ok(widthKm > 35 && widthKm < 38, `width ${widthKm}`);
     assert.ok(heightKm > 45 && heightKm < 48, `height ${heightKm}`);
 });
+
+test('row numbers are grouped into short runs for detail reads', async () => {
+    const { rowRuns } = await import('../src/overture.js');
+    assert.deepEqual(rowRuns([3, 10, 60, 500, 530, 9000]), [{ start: 3, end: 60 }, { start: 500, end: 530 }, { start: 9000, end: 9000 }]);
+    assert.deepEqual(rowRuns([]), []);
+});

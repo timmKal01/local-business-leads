@@ -5,7 +5,7 @@
 //   2. full details, only for the candidates chosen.
 // Licenses: CDLA Permissive 2.0 (Meta, Microsoft and others), Apache 2.0 (Foursquare), CC0 (AllThePlaces).
 import { log } from 'apify';
-import { asyncBufferFromUrl, cachedAsyncBuffer, parquetMetadataAsync, parquetReadObjects } from 'hyparquet';
+import { asyncBufferFromUrl, parquetMetadataAsync, parquetReadObjects } from 'hyparquet';
 import { compressors } from 'hyparquet-compressors';
 
 const BUCKET = 'https://overturemaps-us-west-2.s3.amazonaws.com';
@@ -62,7 +62,8 @@ export async function findCandidates({ files, bbox, keep }) {
     const candidates = [];
     let inBox = 0;
     for (const [fileIndex, { url, size }] of files.entries()) {
-        const file = cachedAsyncBuffer(await asyncBufferFromUrl({ url, byteLength: size, fetch: steadyFetch }));
+        // No byte cache: a city reads tens of MB, and keeping it all would double the memory a run needs.
+        const file = await asyncBufferFromUrl({ url, byteLength: size, fetch: steadyFetch });
         const metadata = await parquetMetadataAsync(file);
         let start = 0;
         for (const [groupIndex, rowGroup] of metadata.row_groups.entries()) {
@@ -84,8 +85,23 @@ export async function findCandidates({ files, bbox, keep }) {
 }
 
 /**
- * Pass 2: full details for some candidates, read per row group as one range from the first to the last candidate.
- * Returns the places in the same order as `chosen`.
+ * Split sorted row numbers into runs whose neighbours are at most `maxGap` apart, so each run is one small read.
+ * @param {number[]} sorted
+ */
+export function rowRuns(sorted, maxGap = 64) {
+    const runs = [];
+    for (const row of sorted) {
+        const last = runs[runs.length - 1];
+        if (last && row - last.end <= maxGap) last.end = row;
+        else runs.push({ start: row, end: row });
+    }
+    return runs;
+}
+
+/**
+ * Pass 2: full details for some candidates. Candidates are spread over the area, so each row group is read as a few
+ * short runs around them, not as one range from the first to the last (that read whole row groups and ran out of
+ * memory on Apify). Returns the places in the same order as `chosen`.
  */
 export async function readDetails(chosen) {
     const byGroup = new Map();
@@ -95,12 +111,15 @@ export async function readDetails(chosen) {
     }
     const details = new Map();
     for (const group of byGroup.values()) {
-        const rows = group.map((c) => c.rowIndex).sort((a, b) => a - b);
-        const lo = rows[0];
-        const hi = rows[rows.length - 1] + 1;
         const { file, metadata } = group[0];
-        const read = await parquetReadObjects({ file, metadata, compressors, columns: DETAIL_COLUMNS, rowStart: lo, rowEnd: hi });
-        for (const c of group) details.set(c, read[c.rowIndex - lo]);
+        const byRow = new Map(group.map((c) => [c.rowIndex, c]));
+        for (const { start, end } of rowRuns([...byRow.keys()].sort((a, b) => a - b))) {
+            const read = await parquetReadObjects({ file, metadata, compressors, columns: DETAIL_COLUMNS, rowStart: start, rowEnd: end + 1 });
+            read.forEach((place, i) => {
+                const c = byRow.get(start + i);
+                if (c) details.set(c, place);
+            });
+        }
     }
     return chosen.map((c) => details.get(c));
 }
