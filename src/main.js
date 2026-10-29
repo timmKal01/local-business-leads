@@ -102,6 +102,16 @@ try {
 log.info(`${candidates.length} candidates (${counts.ofType} ${categoryTitle.toLowerCase()}, ${counts.closed} closed, ${counts.lowConfidence} low confidence, ${counts.chains} chains left out)`);
 
 // 3. Rows. Details are read in batches; with website contacts on, websites are read a few at a time.
+// The run's time limit (set by whoever started it). New businesses stop this long before it, so the run finishes with
+// what it has instead of being cut off as "timed out".
+const DEADLINE_MARGIN_MS = 45_000;
+const timeoutAt = Actor.getEnv().timeoutAt;
+let timeRanOut = false;
+const nearDeadline = () => {
+    if (timeoutAt && Date.now() > new Date(timeoutAt).getTime() - DEADLINE_MARGIN_MS) timeRanOut = true;
+    return timeRanOut;
+};
+
 let saved = 0;
 let stopped = false;
 const scrapedAt = new Date().toISOString();
@@ -159,7 +169,7 @@ async function save(row) {
 
 const filtersOn = onlyWithWebsite || requireContact;
 let taken = 0;
-while (taken < candidates.length && saved < maxResults && !stopped) {
+while (taken < candidates.length && saved < maxResults && !stopped && !nearDeadline()) {
     // Read details for as many as are still needed, more when filters will drop some.
     const want = Math.max(10, (maxResults - saved) * (filtersOn ? 3 : 1));
     const batch = candidates.slice(taken, taken + want);
@@ -178,7 +188,7 @@ while (taken < candidates.length && saved < maxResults && !stopped) {
     let next = 0;
     let inFlight = 0;
     const worker = async () => {
-        while (next < listings.length && !stopped && saved + inFlight < maxResults) {
+        while (next < listings.length && !stopped && saved + inFlight < maxResults && !nearDeadline()) {
             const listing = listings[next++];
             inFlight++;
             try {
@@ -192,11 +202,14 @@ while (taken < candidates.length && saved < maxResults && !stopped) {
 }
 
 if (saved === 0) {
-    const note = emptyRunReason(counts, { categoryTitle, place: place.name, includeChains, onlyWithWebsite, requireContact });
+    const note = timeRanOut
+        ? `The run's time limit was reached before any business was saved (${candidates.length} candidates were found). Run again with a longer time limit.`
+        : emptyRunReason(counts, { categoryTitle, place: place.name, includeChains, onlyWithWebsite, requireContact });
     await stop(noteRow(note, search, { ...counts, release }), note);
 }
 
-const summary = `Saved ${saved} ${categoryTitle.toLowerCase()} in ${place.name} (Overture Maps ${release}).`;
+const summary = `Saved ${saved} ${categoryTitle.toLowerCase()} in ${place.name} (Overture Maps ${release}).`
+    + `${timeRanOut ? " Stopped early to finish within the run's time limit; run again with a longer limit for more." : ""}`;
 log.info(summary);
 await Actor.setStatusMessage(summary);
 await Actor.exit();
