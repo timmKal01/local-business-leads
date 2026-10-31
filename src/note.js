@@ -10,6 +10,9 @@ export const NOTE_NAME = 'No businesses saved in this run (not charged)';
  */
 export function emptyRunReason(counts, search) {
     const what = search.categoryTitle.toLowerCase();
+    if (counts.ofType === 0 && search.source === 'google_maps') {
+        return `Google Maps listed no ${what} in ${search.place}${counts.outside ? ` (${counts.outside} found were outside the area)` : ''}. Try a nearby bigger city or another type of business.`;
+    }
     if (counts.ofType === 0) {
         return `No ${what} found in ${search.place} (${counts.inBox} places of other kinds are listed there). Try a nearby bigger city or another type of business.`;
     }

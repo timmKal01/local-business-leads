@@ -58,3 +58,46 @@ export function placeToListing(place, { countryCode }) {
         sources: datasets,
     };
 }
+
+/**
+ * One Google Maps place (googleMaps.js parsePlace) -> the same listing fields, plus rating, reviews, hours and links.
+ * Google gives one formatted address, so the street is its first part and the city comes from Google's locality.
+ * @param {object} place
+ * @param {{ countryCode: string|null }} context the searched place's country, for phone numbers written without one
+ */
+export function googlePlaceToListing(place, { countryCode }) {
+    const country = (place.countryCode ?? countryCode ?? '').toUpperCase() || null;
+    const phone = place.phone ? (toE164(place.phone, country) ?? place.phone) : null;
+    const [cityPart, regionPart] = (place.locality ?? '').split(',').map((s) => s.trim());
+    const postcode = place.address?.match(/\b(\d{5})(?:-\d{4})?$/)?.[1] ?? null;
+    return {
+        name: place.name,
+        category: place.categories[0] ?? null,
+        categories: place.categories,
+        phone,
+        phones: phone ? [phone] : [],
+        email: null,
+        emails: [],
+        website: normalizeWebsite(place.website),
+        address: place.address,
+        street: place.address?.split(',')[0]?.trim() ?? null,
+        city: cityPart || null,
+        region: regionPart?.replace(/\s*\d.*$/, '') || null,
+        postcode,
+        countryCode: country,
+        socialLinks: {},
+        latitude: place.latitude,
+        longitude: place.longitude,
+        isChain: null, // Google doesn't say; Overture does
+        brand: null,
+        operatingStatus: place.status,
+        confidence: null,
+        overtureId: null,
+        sources: ['Google Maps'],
+        rating: place.rating,
+        reviewCount: place.reviewCount,
+        hours: place.hours,
+        googleMapsUrl: place.mapsUrl,
+        googlePlaceId: place.placeId,
+    };
+}
