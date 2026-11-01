@@ -1,4 +1,4 @@
-# Local Business Leads: Phones, Emails & Websites by City
+# Google Maps Leads: Local Businesses with Phones & Emails
 
 Pick a type of business and a place anywhere in the world. You get one row per business from Google Maps, with its name, address, phone, website, rating, review count and opening hours. Turn on website contacts and each business's own site is read for an email, more phones, WhatsApp and social profiles. No Google account or API key needed.
 

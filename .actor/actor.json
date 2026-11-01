@@ -1,8 +1,8 @@
 {
     "actorSpecification": 1,
     "name": "local-business-leads",
-    "title": "Local Business Leads: Phones, Emails & Websites by City",
-    "description": "Local business leads for any city: pick a type of business and a place, get each one's name, address, phone, website, email and social profiles from Overture Maps open data, plus what its own website lists. No Google account, no proxy. Any country.",
+    "title": "Google Maps Leads: Local Businesses with Phones & Emails",
+    "description": "Local business leads from Google Maps for any city: pick a type of business and a place, get each one's name, address, phone, website, rating, reviews and hours, plus the email, WhatsApp and social profiles its own website lists. No Google account needed. Any country.",
     "version": "0.1",
     "meta": {
         "templateId": "custom-no-proxy"
